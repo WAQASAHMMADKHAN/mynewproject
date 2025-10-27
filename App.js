@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, TextInput } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons'; 
 import * as Yup from 'yup';
 import InputField from './Feildinput.js'; 
 
@@ -21,6 +22,8 @@ export default function App() {
  const [password, setPassword] = useState('');
  const [errors, setErrors] = useState({});
 
+ const [isPasswordVisible, setIsPasswordVisible] = useState(false); 
+
  const handleLogin = async () => {
   setErrors({});
   const values = { email, password };
@@ -28,7 +31,7 @@ export default function App() {
  try {
  await LoginSchema.validate(values, { abortEarly: false });
    Alert.alert(
-   'Login Successful!',
+   'Login Successful! 🎉',
   `Email: ${email}\nPassword is Validated and Secure.`,
     [{ text: 'OK' }]
    );
@@ -40,6 +43,9 @@ export default function App() {
  });
  setErrors(newErrors);
  }
+ };
+ const togglePasswordVisibility = () => {
+   setIsPasswordVisible(!isPasswordVisible);
  };
 
  return (
@@ -56,20 +62,40 @@ export default function App() {
                 keyboardType="email-address"
                 error={errors.email}
           />
-          <InputField
+      
+          
+          <View>
+            <InputField
                 label="Password"
                 placeholder="Password"
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry={true}
+                secureTextEntry={!isPasswordVisible} 
                 error={errors.password}
                 hintText="(Minimum 10 chars, 1 Cap, 1 Num, 1 Special Char required)"
-          />
+            />
+            <TouchableOpacity 
+              style={styles.eyeIcon} 
+              onPress={togglePasswordVisibility}
+            >
+              <Icon 
+                name={isPasswordVisible ? "eye-off-outline" : "eye-outline"} 
+                size={24} 
+                color="#888" 
+              />
+            </TouchableOpacity>
+          </View>
           
            <TouchableOpacity 
             style={styles.button} 
              onPress={handleLogin} 
            >
+             <Icon 
+                name="log-in-outline" 
+                size={22} 
+                color="white" 
+                style={styles.buttonIcon} 
+              />
            <Text style={styles.buttonText}>Sign In</Text>
            </TouchableOpacity>
           </View>
@@ -99,6 +125,13 @@ const styles = StyleSheet.create({
    width: '100%',
     maxWidth: 400,
    },
+   eyeIcon: {
+    position: 'absolute',
+    right: 10,
+    top: 35, 
+    padding: 10,
+    zIndex: 1, 
+   },
    button: {
     backgroundColor: '#007BFF',
     padding: 15,
@@ -106,10 +139,15 @@ const styles = StyleSheet.create({
      width: '100%',
      alignItems: 'center',
      marginTop: 30,
+     flexDirection: 'row', 
+     justifyContent: 'center',
   },
   buttonText: {
     color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
   },
+  buttonIcon: {
+    marginRight: 10, 
+  }
 });
