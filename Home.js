@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, A
 import { useSelector, useDispatch } from 'react-redux'; 
 import Ionicons from 'react-native-vector-icons/Ionicons'; 
 import { setPosDevices } from './redux/dataSlice'; 
-
+import axios from "axios";
+import { fetchPosDevicesAsync } from './redux/dataSlice';
 const POS_DEVICES_URL = 'http://51.112.221.81:8000/api/pos-devices/fetchPosDevices'; 
 
 const screenWidth = Dimensions.get('window').width;
@@ -26,6 +27,8 @@ const HomeScreen = ({ navigation }) => {
     const dispatch = useDispatch();
     const userData = useSelector((state) => state.auth.userData);
     const posDevices = useSelector((state) => state.data.posDevices);
+    console.log(posDevices,"posDevicesposDevicesposDevices");
+    
     const authToken = userData?.authToken;
     const userName = userData?.name || 'User';
 
@@ -53,50 +56,49 @@ const HomeScreen = ({ navigation }) => {
             inActiveOrders: inActiveOrders,
         });
     }, []);
-    const fetchPosDevices = useCallback(async (showLoading = true) => {
-        if (!authToken) return;
+
+    const fetchPosDevices = async (showLoading = true) => {
 
         showLoading && setIsLoading(true);
         
         try {
-            const response = await fetch(POS_DEVICES_URL, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
-            });
 
-            const data = await response.json();
+            const response = await axios.get(POS_DEVICES_URL);
+            console.log(response?.data?.data,);
 
-            if (response.ok && Array.isArray(data.devices)) {
-                dispatch(setPosDevices(data.devices));
-                calculateMetrics(data.devices);
+            dispatch(setPosDevices(response?.data?.data || []));
 
-            } else {
-                const errorMessage = data.message || "Failed to fetch device data.";
-                Alert.alert("Data Error", errorMessage);
-                dispatch(setPosDevices([])); 
-                calculateMetrics([]);
-            }
+            // const data = await response.json();
+
+            // if (response.ok && Array.isArray(data.devices)) {
+            //     dispatch(setPosDevices(data.devices));
+            //     // calculateMetrics(data.devices);
+
+            // } else {
+            //     const errorMessage = data.message || "Failed to fetch device data.";
+            //     Alert.alert("Data Error", errorMessage);
+            //     dispatch(setPosDevices([])); 
+            //     // calculateMetrics([]);
+            // }
 
         } catch (error) {
             console.error("Home API Error:", error);
             Alert.alert("Network Error", "Could not connect to the POS server.");
             dispatch(setPosDevices([])); 
-            calculateMetrics([]);
+            // calculateMetrics([]);
         } finally {
             setIsLoading(false);
             setRefreshing(false);
         }
-    }, [authToken, dispatch, calculateMetrics]); 
+    }; 
+
     useEffect(() => {
         fetchPosDevices(); 
-    }, [fetchPosDevices]); 
+    }, []); 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         fetchPosDevices(false); 
-    }, [fetchPosDevices]);
+    }, []);
     const handleNavigation = (deviceType) => {
         navigation.navigate('DeviceList', { deviceType: deviceType });
     };

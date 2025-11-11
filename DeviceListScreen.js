@@ -111,15 +111,13 @@ const DeviceListScreen = ({ navigation, route }) => {
                         </TouchableOpacity>
                     </View>
                 ) : 
-                
-                /* Empty State */
                 filteredDevices.length === 0 && !isLoadingDevices ? (
                     <View style={styles.emptyContainer}>
                         <Ionicons name="information-circle-outline" size={40} color="#6c757d" />
                         <Text style={styles.emptyText}>No devices found{deviceType !== 'All' ? ` for ${deviceType}` : ''}.</Text>
                     </View>
                 ) : (
-                    /* Data List */
+                    
                     <FlatList
                         data={filteredDevices}
                         renderItem={({ item }) => <DeviceItem device={item} />}
