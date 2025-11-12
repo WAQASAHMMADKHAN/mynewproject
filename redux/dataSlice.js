@@ -1,164 +1,54 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import axios from 'axios';
+import { selectToken } from './authSlice'; 
 
+const BASE_URL = 'http://3.29.1.212:8000';
 
-const BASE_URL = 'http://51.112.221.81:8000'; 
-
-
-const initialState = {
-  posDevices: [],          
-  merchants: [],          
-  isLoadingDevices: false,
-  isLoadingMerchants: false,
-  errorDevices: null,
-  errorMerchants: null,
-};
 export const fetchPosDevicesAsync = createAsyncThunk(
   'data/fetchPosDevices',
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { getState }) => {
     const state = getState();
-    const token = state.auth.userData.authToken;
+    const token = selectToken(state); 
+    const res = await axios.get(`${BASE_URL}/api/pos-devices/fetchPosDevices`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      timeout: 15000,
+    });
+    const payload = Array.isArray(res.data)
+      ? res.data
+      : (res.data?.devices || res.data?.data || []);
 
-    if (!token) {
-      return rejectWithValue('No authentication token found for devices.');
-    }
-
-    try {
-      const response = await fetch(`${BASE_URL}/api/pos-devices/fetchPosDevices`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const responseText = await response.text(); 
-      
-      if (!response.ok) {
-        let errorMsg;
-        if (response.status === 401) {
-            errorMsg = 'Unauthorized: Invalid or expired token. Please log in again.';
-        } else {
-            try {
-                
-                const errorJson = JSON.parse(responseText);
-                errorMsg = errorJson.message || `Devices API Error (${response.status})`;
-            } catch {
-              
-                errorMsg = `Fetch Devices Failed: Non-JSON response received with status ${response.status}. Token is likely invalid.`;
-            }
-        }
-        return rejectWithValue(errorMsg);
-      }
-
-     
-      const data = JSON.parse(responseText);
-      return data.devices || data || []; 
-
-    } catch (error) {
-      return rejectWithValue(`Network/Parsing failed: ${error.message}`);
-    }
+    return Array.isArray(payload) ? payload : [];
   }
 );
-export const fetchMerchantListAsync = createAsyncThunk( 
-  'data/fetchMerchantList',
-  async (_, { getState, rejectWithValue }) => {
-    const state = getState();
-    const token = state.auth.userData.authToken;
-    
-    if (!token) {
-      return rejectWithValue('No authentication token found for merchant list.');
-    }
 
-    try {
-      const response = await fetch(`${BASE_URL}/api/merchant/getMerchantsList`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, 
-        },
-      });
-
-      const responseText = await response.text(); 
-      
-      if (!response.ok) {
-        let errorMsg;
-        if (response.status === 401) {
-            errorMsg = 'Unauthorized: Invalid or expired token. Please log in again.';
-        } else {
-            try {
-             
-                const errorJson = JSON.parse(responseText);
-                errorMsg = errorJson.message || `Merchant API Error (${response.status})`;
-            } catch {
-                
-                errorMsg = `Fetch Merchants Failed: Non-JSON response received with status ${response.status}. Token is likely invalid.`;
-            }
-        }
-        return rejectWithValue(errorMsg);
-      }
-      
-      const data = JSON.parse(responseText);
-
-      if (Array.isArray(data)) {
-          return data; 
-      } else {
-          return rejectWithValue('Invalid data structure: Expected a direct array of merchants.');
-      }
-
-    } catch (error) {
-      return rejectWithValue(`Network/Parsing failed: ${error.message}`);
-    }
-  }
-);
-export const dataSlice = createSlice({
+const dataSlice = createSlice({
   name: 'data',
-  initialState,
+  initialState: {
+    posDevices: [],
+    loading: false,
+    error: null,
+  },
   reducers: {
-    setPosDevices: (state, action) => {
-      state.posDevices = action.payload;
-    },
-   
-    clearPosDevices: (state) => {
-      state.posDevices = [];
-      state.merchants = []; 
-      state.errorDevices = null;
-      state.errorMerchants = null;
+    setPosDevices(state, action) {
+      state.posDevices = Array.isArray(action.payload) ? action.payload : [];
     },
   },
   extraReducers: (builder) => {
-
     builder
       .addCase(fetchPosDevicesAsync.pending, (state) => {
-        state.isLoadingDevices = true;
-        state.errorDevices = null;
+        state.loading = true;
+        state.error = null;
       })
       .addCase(fetchPosDevicesAsync.fulfilled, (state, action) => {
-        state.isLoadingDevices = false;
+        state.loading = false;
         state.posDevices = action.payload;
       })
       .addCase(fetchPosDevicesAsync.rejected, (state, action) => {
-        state.isLoadingDevices = false;
-        state.errorDevices = action.payload;
-        state.posDevices = []; 
-      })
-    
-      .addCase(fetchMerchantListAsync.pending, (state) => {
-        state.isLoadingMerchants = true;
-        state.errorMerchants = null;
-      })
-      .addCase(fetchMerchantListAsync.fulfilled, (state, action) => {
-        state.isLoadingMerchants = false;
-        state.merchants = action.payload; 
-      })
-      .addCase(fetchMerchantListAsync.rejected, (state, action) => {
-        state.isLoadingMerchants = false;
-        state.errorMerchants = action.payload;
-        state.merchants = []; 
+        state.loading = false;
+        state.error = action.error?.message || 'Failed to fetch devices';
       });
-  }
+  },
 });
 
-export const { setPosDevices, clearPosDevices } = dataSlice.actions;
-
-
+export const { setPosDevices } = dataSlice.actions;
 export default dataSlice.reducer;

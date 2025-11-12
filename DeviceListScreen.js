@@ -4,25 +4,49 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSelector, useDispatch } from 'react-redux'; 
 import { fetchPosDevicesAsync } from './redux/dataSlice';
 
-const DeviceItem = ({ device }) => {
-    const statusColor = device.status === 'Online' ? '#28a745' : '#dc3545';
-    const statusText = device.status || 'N/A';
+const toInt = (v) =>
+  typeof v === "number"? v: Number.isFinite(parseInt(v, 10))? parseInt(v, 10): 0;
 
-    return (
-        <View style={styles.card}>
-            <View style={styles.headerRow}>
-                <Text style={styles.deviceName}>{device.name || 'N/A'}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-                    <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>{statusText}</Text>
-                </View>
-            </View>
-            <Text style={styles.detailText}>IP Address: {device.ip || 'N/A'}</Text>
-            <Text style={styles.detailText}>Login At: {device.loginTime || 'N/A'}</Text>
-            <Text style={styles.detailText}>Active Orders: {device.activeOrders || 0}</Text>
-            <Text style={styles.detailText}>Unsynced Orders: {device.unsyncedOrders || 0}</Text>
+const DeviceItem = ({ device }) => {
+ const statusStr = String(device.status ?? '').toLowerCase();
+  const isOnline = typeof device.status === 'boolean'
+    ? device.status
+    : (statusStr === 'online' || statusStr === 'connected' || statusStr === 'active');
+  const statusColor = isOnline ? '#28a745' : '#dc3545';
+  const statusText = isOnline ? 'Online' : 'Offline';
+
+  const fmtDate = (v) => {
+    if (!v) return 'N/A';
+    try {
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return String(v);
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric', month: 'short', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      }).format(d);
+    } catch { return String(v); }
+  };
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.headerRow}>
+        <Text style={styles.deviceName}>{device.name || 'N/A'}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+          <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>{statusText}</Text>
         </View>
-    );
+      </View>
+     
+      <Text style={styles.detailText}>IP Address: {device.ip || 'N/A'}</Text> 
+      
+      <Text style={styles.detailText}>Login At: {fmtDate(device.loginTime)}</Text> 
+      
+      <Text style={styles.detailText}>Active Orders: {toInt(device.activeOrders)}</Text>
+     <Text style={styles.detailText}>Inactive Orders: {toInt(device.inActiveOrders)}</Text>
+    
+   </View>
+  );
 };
+
 const DeviceListScreen = ({ navigation, route }) => {
     const dispatch = useDispatch();
     const { deviceType } = route.params || {}; 
@@ -39,26 +63,70 @@ const DeviceListScreen = ({ navigation, route }) => {
             Alert.alert("Error", `Failed to load devices: ${errorDevices}`);
         }
     }, [dispatch, isLoadingDevices, posDevices, errorDevices]);
+    
     const filteredDevices = useMemo(() => {
-       
-        const devicesArray = Array.isArray(posDevices) ? posDevices : []; 
+        const devicesArray = Array.isArray(posDevices) ? posDevices : [];
+        
+        const mapDevice = (d, idx) => ({
+            id: d?.id ?? d?._id ?? d?.uuid ?? d?.code ?? `${d?.ip || d?.ip_address || 'dev'}-${idx}`,
+            name: d?.name ?? d?.device_name ?? d?.title ?? 'Unnamed',
+            
+         
+            ip: d?.ipAddress ?? d?.ip ?? d?.device_ip ?? d?.network_ip ?? d?.ip_v4 ?? '',
+            
+            
+            loginTime: d?.lastLoggedInAt ?? d?.last_connected ?? d?.loginTime ?? d?.login_at ?? d?.last_login ?? d?.last_seen ?? d?.last_activity ?? null,
+            activeOrders: toInt(d?.activeOrdersCount ?? d?.activeOrders ?? d?.ordersActive ?? d?.orders_active ?? d?.active_orders_count ?? d?.orders?.active ?? 0), 
+            inActiveOrders: toInt(d?.unsyncOrdersCount ?? d?.inactiveOrders ?? d?.ordersInactive ?? d?.orders_inactive ?? d?.inactive_orders_count ?? d?.orders?.inactive ?? 0),
+            unsyncedOrders: d?.unsyncedOrders ?? d?.unsynced ?? d?.unsynced_count ?? d?.pending_sync ?? 0,
+            
+            status: (()=>{
+                if (typeof d?.is_online === 'boolean') return d.is_online;
+                if (typeof d?.isOnline === 'boolean') return d.isOnline;
+                if (typeof d?.online === 'boolean') return d.online;
+                if (typeof d?.connected === 'boolean') return d.connected;
+                if (typeof d?.isConnected === 'boolean') return d.isConnected;
 
-        return devicesArray
-            .filter((device) => {
-                if (deviceType && deviceType !== 'All' && device.status !== deviceType) {
-                    return false;
+                if (typeof d?.online === 'number') return d.online === 1;
+                if (typeof d?.is_online === 'number') return d.is_online === 1;
+
+                const s = String(
+                    d?.status ?? d?.device_status ?? d?.connection_status ?? d?.online_status ?? d?.state ?? ''
+                ).toLowerCase().trim();
+                if (['online','connected','up','active'].includes(s)) return 'online';
+                if (['offline','disconnected','down','inactive'].includes(s)) return 'offline';
+
+                const ts =
+                    d?.lastPing ?? d?.last_ping ??
+                    d?.lastSeen ?? d?.last_seen ??
+                    d?.lastHeartbeat ?? d?.last_heartbeat ??
+                    d?.seenAt ?? d?.updatedAt ?? d?.updated_at ?? null;
+                if (ts) {
+                    const t = new Date(ts).getTime();
+                    if (Number.isFinite(t) && (Date.now() - t) <= 5*60*1000) return 'online';
                 }
-                if (searchQuery) {
-                    const searchLower = searchQuery.toLowerCase();
-                    const deviceName = device.name?.toLowerCase() || '';
-                    const deviceIP = device.ip?.toLowerCase() || '';
 
-                    return deviceName.includes(searchLower) || deviceIP.includes(searchLower);
-                }
+                return 'offline';
+            })(),
+        });
 
-                return true;
+        const normalized = devicesArray.map(mapDevice);
+        const type = String(deviceType ?? 'All').toLowerCase();
+        const byType = type === 'all'
+            ? normalized
+            : normalized.filter(d => {
+                const st = typeof d.status === 'boolean' ? (d.status ? 'online' : 'offline') : String(d.status).toLowerCase();
+                return st === type;
             });
+
+        if (!searchQuery) return byType;
+        const q = searchQuery.toLowerCase();
+        return byType.filter(d =>
+            (d.name || '').toLowerCase().includes(q) ||
+            (d.ip || '').toLowerCase().includes(q)
+        );
     }, [posDevices, deviceType, searchQuery]);
+    
     if (isLoadingDevices && filteredDevices.length === 0) {
         return (
             <View style={styles.loadingContainer}>
@@ -73,7 +141,9 @@ const DeviceListScreen = ({ navigation, route }) => {
                 <Ionicons name="arrow-back-outline" size={24} color="#333" />
             </TouchableOpacity>
             <Text style={styles.screenTitle}>
-                {deviceType && deviceType !== 'All' ? `${deviceType} Devices` : 'All Devices'}
+                {deviceType && String(deviceType).toLowerCase() !== 'all'
+   ? `${deviceType} Devices`
+                    : 'All Devices'}
             </Text>
         </View>
     );
@@ -121,7 +191,7 @@ const DeviceListScreen = ({ navigation, route }) => {
                     <FlatList
                         data={filteredDevices}
                         renderItem={({ item }) => <DeviceItem device={item} />}
-                        keyExtractor={item => item.id || item.ip || item.name || Math.random().toString()} 
+                        keyExtractor={(item, index) => String(item.id || item.ip || `${item.name}-${index}`)} 
                         contentContainerStyle={styles.listContent}
                     />
                 )}
@@ -148,8 +218,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold', 
         color: '#333' 
     },
-
-    // Search
     searchContainer: { 
         flexDirection: 'row', 
         alignItems: 'center', 

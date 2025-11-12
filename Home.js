@@ -4,8 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import Ionicons from 'react-native-vector-icons/Ionicons'; 
 import { setPosDevices } from './redux/dataSlice'; 
 import axios from "axios";
-import { fetchPosDevicesAsync } from './redux/dataSlice';
-const POS_DEVICES_URL = 'http://51.112.221.81:8000/api/pos-devices/fetchPosDevices'; 
+const POS_DEVICES_URL = 'http://3.29.1.212:8000/api/pos-devices/fetchPosDevices'; 
 
 const screenWidth = Dimensions.get('window').width;
 const DashboardCard = ({ title, count, icon, color, onPress }) => (
@@ -27,7 +26,6 @@ const HomeScreen = ({ navigation }) => {
     const dispatch = useDispatch();
     const userData = useSelector((state) => state.auth.userData);
     const posDevices = useSelector((state) => state.data.posDevices);
-    console.log(posDevices,"posDevicesposDevicesposDevices");
     
     const authToken = userData?.authToken;
     const userName = userData?.name || 'User';
@@ -40,65 +38,116 @@ const HomeScreen = ({ navigation }) => {
         offlineDevices: 0,
         activeOrders: 0,
         inActiveOrders: 0,
+        totalOrders: 0,
     });
+const toInt = (v) =>
+  typeof v === "number"
+    ? v
+    : Number.isFinite(parseInt(v, 10))
+    ? parseInt(v, 10)
+    : 0;
+const isOnlineFrom = (d) => {
+  if (typeof d?.is_online === 'boolean') return d.is_online;
+  if (typeof d?.online === 'boolean') return d.online;
+  if (typeof d?.connected === 'boolean') return d.connected;
+  if (typeof d?.isConnected === 'boolean') return d.isConnected;
+  if (typeof d?.online === 'number') return d.online === 1;
+  if (typeof d?.is_online === 'number') return d.is_online === 1;
 
-    const calculateMetrics = useCallback((devices) => {
-        const online = devices.filter(d => d.status === 'Online').length;
-        const offline = devices.length - online;
-        const activeOrders = devices.reduce((sum, d) => sum + (d.activeOrdersCount || d.activeOrders || 0), 0);
-        const inActiveOrders = devices.reduce((sum, d) => sum + (d.inActiveOrders || 0), 0); 
+  const s = String(d?.status ?? d?.device_status ?? d?.connection_status ?? d?.online_status ?? '').toLowerCase().trim();
+  if (['online','connected','up','active'].includes(s)) return true;
+  if (['offline','disconnected','down','inactive'].includes(s)) return false;
 
-        setDashboardMetrics({
-            totalDevices: devices.length,
-            onlineDevices: online,
-            offlineDevices: offline,
-            activeOrders: activeOrders,
-            inActiveOrders: inActiveOrders,
-        });
-    }, []);
+  const ts = d?.lastPing ?? d?.last_ping ?? d?.lastSeen ?? d?.last_seen ?? d?.lastHeartbeat ?? d?.last_heartbeat ?? d?.updatedAt ?? d?.updated_at;
+  if (ts) {
+    const t = new Date(ts).getTime();
+    if (Number.isFinite(t)) return (Date.now() - t) <= 5*60*1000;
+  }
+  return false;
+};
+const calculateMetrics = React.useCallback((devices = []) => {
+  const list = Array.isArray(devices) ? devices : [];
+
+  const online = list.reduce((sum, d) => sum + (isOnlineFrom(d) ? 1 : 0), 0);
+  const offline = list.length - online;
+  const activeOrders = list.reduce((sum, d) => sum + toInt(
+      d?.activeOrdersCount ??         
+      d?.activeOrders ??              
+      d?.ordersActive ??            
+      d?.orders_active ??            
+      d?.active_orders_count ??       
+      d?.orders?.active ??            
+      0
+  ), 0);
+  const inActiveOrders = list.reduce((sum, d) => sum + toInt(
+      d?.unsyncOrdersCount ?? 
+      d?.unsyncOrdersCount ?? 
+      d?.unsyncOrdersCount?? 
+      d?.unsyncOrdersCount ?? 
+      d?.unsyncOrdersCount ?? 
+      d?.unsyncOrdersCount ??           
+      0
+  ), 0);
+  
+  const totalOrders = activeOrders + inActiveOrders;
+
+  setDashboardMetrics({
+    totalDevices: list.length,
+    onlineDevices: online,
+    offlineDevices: offline,
+    activeOrders,
+    inActiveOrders,
+    totalOrders,
+  });
+}, []);
 
     const fetchPosDevices = async (showLoading = true) => {
-
         showLoading && setIsLoading(true);
         
         try {
-
-            const response = await axios.get(POS_DEVICES_URL);
-            console.log(response?.data?.data,);
-
-            dispatch(setPosDevices(response?.data?.data || []));
-
-            // const data = await response.json();
-
-            // if (response.ok && Array.isArray(data.devices)) {
-            //     dispatch(setPosDevices(data.devices));
-            //     // calculateMetrics(data.devices);
-
-            // } else {
-            //     const errorMessage = data.message || "Failed to fetch device data.";
-            //     Alert.alert("Data Error", errorMessage);
-            //     dispatch(setPosDevices([])); 
-            //     // calculateMetrics([]);
-            // }
-
-        } catch (error) {
-            console.error("Home API Error:", error);
-            Alert.alert("Network Error", "Could not connect to the POS server.");
+             const response = await axios.get(POS_DEVICES_URL, {
+                 headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                }
+             });
+             const arr = Array.isArray(response?.data)
+            ? response.data
+            : (response?.data?.devices ?? response?.data?.data ?? response?.data?.items ?? response?.data ?? []); 
+            
+            const devices = Array.isArray(arr) ? arr : [];
+            dispatch(setPosDevices(devices));
+            calculateMetrics(devices);
+           
+        }catch (error) {
+            console.error("Home API Error:", error.response ? error.response.data : error.message);
+            Alert.alert("Network Error", "Could not connect to the POS server or failed to authenticate.");
             dispatch(setPosDevices([])); 
-            // calculateMetrics([]);
+            calculateMetrics([]);
         } finally {
             setIsLoading(false);
             setRefreshing(false);
         }
     }; 
 
+    useEffect(() => { 
+        if (authToken) {
+            fetchPosDevices(); 
+        } else {
+             Alert.alert("Authentication Error", "Please log in again to fetch devices.");
+        }
+    }, [authToken]); 
+    
     useEffect(() => {
-        fetchPosDevices(); 
-    }, []); 
+        if (Array.isArray(posDevices)) {
+            calculateMetrics(posDevices);
+        }
+    }, [posDevices, calculateMetrics]);
+    
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         fetchPosDevices(false); 
-    }, []);
+    }, [authToken]); 
+    
     const handleNavigation = (deviceType) => {
         navigation.navigate('DeviceList', { deviceType: deviceType });
     };
@@ -121,17 +170,18 @@ const HomeScreen = ({ navigation }) => {
             }
         >
             <View style={styles.header}>
-                <Text style={styles.greeting}>Hello, {userName}!</Text>
-                <Text style={styles.subHeader}>Welcome to your dashboard.</Text>
+                <Text style={styles.greeting}>Home Screen</Text>
+                <Text style={styles.subHeader}>Welcome to your dashboard, {userName}.</Text>
             </View>
 
             <View style={styles.grid}>
+                {/* Devices */}
                 <DashboardCard 
                     title="Total Devices" 
                     count={dashboardMetrics.totalDevices} 
                     icon="server-outline"
                     color="#007BFF"
-                    onPress={() => handleNavigation('Total')}
+                    onPress={() => handleNavigation('All')}
                 />
                 <DashboardCard 
                     title="Online Devices" 
@@ -140,7 +190,6 @@ const HomeScreen = ({ navigation }) => {
                     color="#4CAF50"
                     onPress={() => handleNavigation('Online')}
                 />
-
                 <DashboardCard 
                     title="Offline Devices" 
                     count={dashboardMetrics.offlineDevices} 
@@ -154,9 +203,15 @@ const HomeScreen = ({ navigation }) => {
                     icon="receipt-outline"
                     color="#ff9800"
                 />
+                <DashboardCard 
+                    title="Inactive Orders" 
+                    count={dashboardMetrics.inActiveOrders} 
+                    icon="remove-circle-outline"
+                    color="#9e9e9e" 
+                />
                  <DashboardCard 
                     title="Total Orders" 
-                    count={dashboardMetrics.activeOrders + dashboardMetrics.inActiveOrders} 
+                    count={dashboardMetrics.totalOrders} 
                     icon="layers-outline"
                     color="#673AB7"
                 />
