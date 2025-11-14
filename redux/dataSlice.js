@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { selectToken } from './authSlice'; 
+import { selectToken } from './authSlice';
 
 const BASE_URL = 'http://3.29.1.212:8000';
 
@@ -8,7 +8,7 @@ export const fetchPosDevicesAsync = createAsyncThunk(
   'data/fetchPosDevices',
   async (_, { getState }) => {
     const state = getState();
-    const token = selectToken(state); 
+    const token = selectToken(state);
     const res = await axios.get(`${BASE_URL}/api/pos-devices/fetchPosDevices`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       timeout: 15000,
@@ -16,7 +16,6 @@ export const fetchPosDevicesAsync = createAsyncThunk(
     const payload = Array.isArray(res.data)
       ? res.data
       : (res.data?.devices || res.data?.data || []);
-
     return Array.isArray(payload) ? payload : [];
   }
 );
@@ -31,6 +30,11 @@ const dataSlice = createSlice({
   reducers: {
     setPosDevices(state, action) {
       state.posDevices = Array.isArray(action.payload) ? action.payload : [];
+    },
+    clearPosDevices(state) {
+      state.posDevices = [];
+      state.error = null;
+      state.loading = false;
     },
   },
   extraReducers: (builder) => {
@@ -50,5 +54,5 @@ const dataSlice = createSlice({
   },
 });
 
-export const { setPosDevices } = dataSlice.actions;
+export const { setPosDevices, clearPosDevices } = dataSlice.actions;
 export default dataSlice.reducer;
