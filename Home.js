@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert, ActivityIndicator, Dimensions, Modal, FlatList } from 'react-native';
+import {View,Text,StyleSheet,TouchableOpacity,ScrollView,RefreshControl,Alert,ActivityIndicator,Dimensions,Modal,FlatList,} from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import axios from 'axios';
@@ -165,6 +165,7 @@ const HomeScreen = ({ navigation }) => {
   }, []);
 
   const [merchantList, setMerchantList] = useState([]);
+  const [branchList, setBranchList] = useState([]);
   const [merchantOptions, setMerchantOptions] = useState(['All Merchants']);
   const [branchOptions, setBranchOptions] = useState(['All Branches']);
 
@@ -193,6 +194,7 @@ const HomeScreen = ({ navigation }) => {
       if (!authToken) {
         console.warn('Cannot fetch branches: Authentication token is missing.');
         setBranchOptions(['All Branches']);
+        setBranchList([]);
         return;
       }
       const currentHeaders = { Authorization: `Bearer ${authToken}` };
@@ -210,18 +212,23 @@ const HomeScreen = ({ navigation }) => {
           : Array.isArray(res?.data)
           ? res.data
           : [];
-        const names = Array.from(
-          new Set(
-            arr
-              .map((b) => b?.name ?? b?.branch_name ?? b?.branch?.name ?? b?.title)
-              .filter((n) => typeof n === 'string' && n.trim().length > 0)
-          )
-        );
 
-        setBranchOptions(['All Branches', ...names]);
+        const branches = arr
+          .filter(Boolean)
+          .map((b) => ({
+            id: b?.id,
+            name: b?.name ?? b?.branch_name ?? b?.branch?.name ?? b?.title,
+          }))
+          .filter(
+            (b) => b.id != null && typeof b.name === 'string' && b.name.trim().length > 0
+          );
+
+        setBranchList(branches);
+        setBranchOptions(['All Branches', ...branches.map((b) => b.name)]);
       } catch (e) {
         console.error('Branches Error (API Call Failed):', e?.response?.data || e?.message);
         setBranchOptions(['All Branches']);
+        setBranchList([]);
         if (e?.response?.status === 401 || String(e?.message).includes('access')) {
           console.warn('Branch API is rejecting the token/access. This is a server issue.');
         }
@@ -233,12 +240,33 @@ const HomeScreen = ({ navigation }) => {
   const fetchPosDevices = async (showLoading = true) => {
     showLoading && setIsLoading(true);
     try {
-      const res = await axios.get(POS_DEVICES_URL, { headers: axiosHeaders });
+      const params = {};
+      if (selectedMerchant && selectedMerchant !== 'All Merchants') {
+        const found = merchantList.find(
+          (m) => String(m.name) === String(selectedMerchant)
+        );
+        if (found?.id != null) {
+          params.merchantID = found.id;
+        }
+      }
+      if (selectedBranch && selectedBranch !== 'All Branches') {
+        const foundB = branchList.find(
+          (b) => String(b.name) === String(selectedBranch)
+        );
+        if (foundB?.id != null) {
+          params.branchID = foundB.id;
+        }
+      }
+
+      const res = await axios.get(POS_DEVICES_URL, {
+        headers: axiosHeaders,
+        params,
+      });
+
       const arr = Array.isArray(res?.data)
         ? res.data
         : res?.data?.devices ?? res?.data?.data ?? res?.data?.items ?? res?.data ?? [];
       const devices = Array.isArray(arr) ? arr : [];
-
       dispatch(setPosDevices(devices));
       calculateMetrics(devices);
     } catch (e) {
@@ -261,6 +289,7 @@ const HomeScreen = ({ navigation }) => {
       Alert.alert('Authentication Error', 'Please log in again to fetch data.');
     }
   }, [authToken]);
+
   useEffect(() => {
     calculateMetrics(posDevices);
   }, [posDevices, calculateMetrics]);
@@ -278,6 +307,13 @@ const HomeScreen = ({ navigation }) => {
       }
     }
   }, [selectedMerchant, merchantList, fetchBranches]);
+
+  useEffect(() => {
+    if (authToken) {
+      fetchPosDevices();
+    }
+  }, [selectedMerchant, selectedBranch]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     const mId =
@@ -291,6 +327,16 @@ const HomeScreen = ({ navigation }) => {
 
   const handleNavigation = (type) =>
     navigation.navigate('DeviceList', { deviceType: type });
+
+  // ---- Order stats placeholder (API aane ke baad change kar sakte ho) ----
+  const orderStats = {
+    totalOrders: dashboardMetrics.totalOrders ?? 0,
+    totalAmount: 0,       // abhi 0, baad me real amount
+    pendingOrders: 0,
+    acceptedOrders: 0,
+    readyOrders: 0,
+    deliveredOrders: 0,
+  };
 
   if (isLoading && !refreshing) {
     return (
@@ -411,6 +457,7 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </Modal>
       </View>
+      <Text style={styles.sectionTitle}>Devices</Text>
 
       <View style={styles.grid}>
         <DashboardCard
@@ -454,6 +501,47 @@ const HomeScreen = ({ navigation }) => {
         />
       </View>
 
+      <Text style={styles.sectionTitle}>Orders</Text>
+
+      <View style={styles.grid}>
+        <DashboardCard
+          title="Total Orders"
+          count={orderStats.totalOrders}
+          icon="cart-outline"
+          color="#ff6f61"
+        />
+        <DashboardCard
+          title="Total Amount (SAR)"
+          count={orderStats.totalAmount}
+          icon="cash-outline"
+          color="#009688"
+        />
+        <DashboardCard
+          title="Pending Orders"
+          count={orderStats.pendingOrders}
+          icon="time-outline"
+          color="#ff9800"
+        />
+        <DashboardCard
+          title="Accepted Orders"
+          count={orderStats.acceptedOrders}
+          icon="checkmark-circle-outline"
+          color="#2196F3"
+        />
+        <DashboardCard
+          title="Ready Orders"
+          count={orderStats.readyOrders}
+          icon="cube-outline"
+          color="#00bcd4"
+        />
+        <DashboardCard
+          title="Delivered Orders"
+          count={orderStats.deliveredOrders}
+          icon="checkmark-done-outline"
+          color="#4caf50"
+        />
+      </View>
+
       <Text style={{ marginTop: 20, color: '#666' }}>
         Pull down or press Refresh to reload data.
       </Text>
@@ -491,6 +579,16 @@ const styles = StyleSheet.create({
   modalSheet: { backgroundColor: '#fff', borderRadius: 12, padding: 12, maxHeight: '70%' },
   optionRow: { paddingVertical: 12, paddingHorizontal: 6 },
   closeBtn: { marginTop: 10, backgroundColor: '#007BFF', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+
+  sectionTitle: {
+    width: '100%',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 10,
+    marginBottom: 6,
+    paddingHorizontal: 5,
+  },
 
   grid: {
     flexDirection: 'row',
