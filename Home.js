@@ -376,43 +376,55 @@ const fetchOrderSummary = useCallback(
     },
     [selectedMerchant, selectedBranch, merchantList, branchList]
   );
+const fetchPosDevices = async (showLoading = true) => {
+  showLoading && setIsLoading(true);
 
-  const fetchPosDevices = async (showLoading = true) => {
-    showLoading && setIsLoading(true);
-    const { params } = getFilterParams();
+  
+  const { params } = getFilterParams();
 
-    try {
-      console.log('fetchPosDevices params:', params);
+  
+  const apiParams = {};
 
-      const res = await axios.get(POS_DEVICES_URL, {
-        headers: axiosHeaders,
-        params,
-      });
+  if (params.merchantID) {
+    apiParams.merchantId = params.merchantID;    
+  }
 
-      const arr = Array.isArray(res?.data)
-        ? res.data
-        : res?.data?.devices ??
-          res?.data?.data ??
-          res?.data?.items ??
-          res?.data ??
-          [];
+  if (params.branchID) {
+    apiParams.branchId = params.branchID;       
+  }
 
-      const devices = Array.isArray(arr) ? arr : [];
-      console.log('Devices length:', devices.length);
+  console.log('fetchPosDevices filter params:', params);
+  console.log('fetchPosDevices API params:', apiParams);
 
-      dispatch(setPosDevices(devices));
-      calculateMetrics(devices);
-    } catch (e) {
-      console.error('Home API Error:', e?.response?.data || e?.message);
-      Alert.alert('Network Error', 'Could not connect to the POS server.');
-      dispatch(setPosDevices([]));
-      calculateMetrics([]);
-    } finally {
-      showLoading && setIsLoading(false);
-      setRefreshing(false);
-    }
-  };
+  try {
+    const res = await axios.get(POS_DEVICES_URL, {
+      headers: axiosHeaders,
+      params: apiParams, 
+    });
 
+    const arr = Array.isArray(res?.data)
+      ? res.data
+      : res?.data?.devices ??
+        res?.data?.data ??
+        res?.data?.items ??
+        res?.data ??
+        [];
+
+    const devices = Array.isArray(arr) ? arr : [];
+    console.log('Devices length:', devices.length);
+
+    dispatch(setPosDevices(devices));
+    calculateMetrics(devices);
+  } catch (e) {
+    console.error('Home API Error:', e?.response?.data || e?.message);
+    Alert.alert('Network Error', 'Could not connect to the POS server.');
+    dispatch(setPosDevices([]));
+    calculateMetrics([]);
+  } finally {
+    showLoading && setIsLoading(false);
+    setRefreshing(false);
+  }
+};
   useEffect(() => {
     if (authToken) {
       const { params, merchantId } = getFilterParams();
@@ -596,8 +608,6 @@ const fetchOrderSummary = useCallback(
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Merchant / Branch picker modal */}
         <Modal
           visible={pickerOpen.open}
           transparent
@@ -722,8 +732,6 @@ const fetchOrderSummary = useCallback(
           color="#673AB7"
         />
       </View>
-
-      {/* DATE FILTERS */}
       <View style={[styles.filterRow, { marginTop: 4 }]}>
         <View style={styles.filterCol}>
           <Text style={styles.filterLabel}>Start Date</Text>
@@ -812,7 +820,6 @@ const fetchOrderSummary = useCallback(
         </View>
       </Modal>
 
-      {/* ORDERS SECTION */}
       <Text style={styles.sectionTitle}>Orders (API Data)</Text>
 
       <View style={styles.grid}>
